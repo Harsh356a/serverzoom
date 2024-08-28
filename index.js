@@ -90,8 +90,15 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('BE-send-message', ({ roomId, msg, sender }) => {
-    io.sockets.in(roomId).emit('FE-receive-message', { msg, sender });
+  socket.on('BE-send-message', ({ roomId, msg, sender, isBreakoutRoom }) => {
+    console.log('Received message:', { roomId, msg, sender, isBreakoutRoom });
+    if (isBreakoutRoom) {
+      // Send only to sockets in the specific breakout room
+      io.to(roomId).emit('FE-receive-message', { msg, sender, isBreakoutRoom, roomId });
+    } else {
+      // Send to all sockets in the main room
+      io.to(roomId).emit('FE-receive-message', { msg, sender, isBreakoutRoom, roomId });
+    }
   });
 
   socket.on('BE-leave-room', ({ roomId, leaver }) => {
@@ -122,10 +129,10 @@ io.on('connection', (socket) => {
     io.to(mainRoomId).emit('FE-breakout-rooms-update', breakoutRooms[mainRoomId]);
   });
   socket.on('BE-join-breakout-room', ({ mainRoomId, breakoutRoomName, userName }) => {
-    console.log("cjjebj")
+    console.log("User joining breakout room:", { mainRoomId, breakoutRoomName, userName });
     socket.leave(mainRoomId);
     socket.join(breakoutRoomName);
-    socketList[socket.id].breakoutRoom = breakoutRoomName;
+    socketList[socket.id] = { ...socketList[socket.id], breakoutRoom: breakoutRoomName };
     
     socket.to(mainRoomId).emit('FE-user-join-breakout', {
       userId: socket.id,
@@ -135,9 +142,11 @@ io.on('connection', (socket) => {
     
     socket.emit('FE-join-breakout-room', breakoutRoomName);
   });
+
   socket.on('BE-leave-breakout-room', ({ mainRoomId, userName }) => {
     const breakoutRoom = socketList[socket.id].breakoutRoom;
     if (breakoutRoom) {
+      console.log("User leaving breakout room:", { mainRoomId, breakoutRoom, userName });
       socket.leave(breakoutRoom);
       delete socketList[socket.id].breakoutRoom;
     }
@@ -148,8 +157,9 @@ io.on('connection', (socket) => {
       userName: userName,
     });
     
-    socket.emit('FE-join-breakout-room', null);
+    socket.emit('FE-leave-breakout-room');
   });
+
 });
 
 http.listen(PORT, () => {
