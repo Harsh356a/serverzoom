@@ -204,9 +204,9 @@ io.on("connection", (socket) => {
   socket.on("BE-accept-call", ({ signal, to }) => {
     io.to(to).emit("FE-call-accepted", {
       signal,
-      answerId,
+      answerId: socket.id  // Use socket.id instead of undefined answerId
     });
-  });
+  })
 });
 
 http.listen(PORT, () => {
