@@ -6,6 +6,7 @@ const PORT = process.env.PORT || 3001;
 const path = require('path');
 
 let socketList = {};
+let breakoutRooms = {};
 
 // app.use(express.static(path.join(__dirname, 'public'))); // this will work for CRA build
 app.use(express.static(path.join(__dirname, '../vite')));
@@ -111,8 +112,46 @@ io.on('connection', (socket) => {
       .to(roomId)
       .emit('FE-toggle-camera', { userId: socket.id, switchTarget });
   });
+
+  socket.on('BE-create-breakout-room', ({ mainRoomId, breakoutRoomName }) => {
+    console.log('Received BE-create-breakout-room', { mainRoomId, breakoutRoomName });
+    if (!breakoutRooms[mainRoomId]) {
+      breakoutRooms[mainRoomId] = [];
+    }
+    breakoutRooms[mainRoomId].push(breakoutRoomName);
+    io.to(mainRoomId).emit('FE-breakout-rooms-update', breakoutRooms[mainRoomId]);
+  });
+  socket.on('BE-join-breakout-room', ({ mainRoomId, breakoutRoomName, userName }) => {
+    console.log("cjjebj")
+    socket.leave(mainRoomId);
+    socket.join(breakoutRoomName);
+    socketList[socket.id].breakoutRoom = breakoutRoomName;
+    
+    socket.to(mainRoomId).emit('FE-user-join-breakout', {
+      userId: socket.id,
+      userName: userName,
+      roomName: breakoutRoomName,
+    });
+    
+    socket.emit('FE-join-breakout-room', breakoutRoomName);
+  });
+  socket.on('BE-leave-breakout-room', ({ mainRoomId, userName }) => {
+    const breakoutRoom = socketList[socket.id].breakoutRoom;
+    if (breakoutRoom) {
+      socket.leave(breakoutRoom);
+      delete socketList[socket.id].breakoutRoom;
+    }
+    socket.join(mainRoomId);
+    
+    socket.to(mainRoomId).emit('FE-user-leave-breakout', {
+      userId: socket.id,
+      userName: userName,
+    });
+    
+    socket.emit('FE-join-breakout-room', null);
+  });
 });
 
 http.listen(PORT, () => {
-  console.log('Connected : 3001');
+  console.log('Connected : ',PORT);
 });
