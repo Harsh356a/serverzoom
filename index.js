@@ -7,8 +7,8 @@ const path = require("path");
 
 let socketList = {};
 let breakoutRooms = {};
+let viewers = {};
 
-// app.use(express.static(path.join(__dirname, 'public'))); // this will work for CRA build
 app.use(express.static(path.join(__dirname, "../vite")));
 
 if (process.env.NODE_ENV === "production") {
@@ -19,22 +19,42 @@ if (process.env.NODE_ENV === "production") {
   });
 }
 
-// Route
 app.get("/ping", (req, res) => {
-  res
-    .send({
-      success: true,
-    })
-    .status(200);
+  res.send({ success: true }).status(200);
 });
 
-// Socket
 io.on("connection", (socket) => {
   console.log(`New User connected: ${socket.id}`);
 
-  socket.on("disconnect", () => {
-    socket.disconnect();
-    console.log("User disconnected!");
+  socket.on("BE-join-as-viewer", ({ roomId, userName }) => {
+    console.log('Viewer joining room:', roomId, userName);
+    socket.join(roomId);
+    viewers[socket.id] = { userName, roomId };
+  
+    const participants = Object.entries(socketList)
+      .filter(([, user]) => user.roomId === roomId)
+      .map(([userId, info]) => ({ userId, info }));
+    
+    // Notify the new viewer about existing participants
+    socket.emit('FE-viewer-init', participants);
+  
+    // Notify all participants in the room about the new viewer
+    socket.to(roomId).emit('FE-new-viewer', { viewerId: socket.id, userName });
+  });
+  
+  socket.on('BE-viewer-send-signal', ({ userId, signal }) => {
+    io.to(userId).emit('FE-viewer-signal', { viewerId: socket.id, signal });
+  });
+  
+  socket.on('BE-send-signal-to-viewer', ({ viewerId, signal }) => {
+    io.to(viewerId).emit('FE-viewer-receive-signal', { userId: socket.id, signal });
+  });
+
+  socket.on("BE-leave-viewer", ({ roomId }) => {
+    console.log(`Viewer left room: ${roomId}`);
+    socket.leave(roomId);
+    delete viewers[socket.id];
+    io.to(roomId).emit('FE-viewer-leave', { viewerId: socket.id });
   });
 
   socket.on("BE-check-user", ({ roomId, userName }) => {
@@ -49,26 +69,23 @@ io.on("connection", (socket) => {
       socket.emit("FE-error-user-exist", { error });
     });
   });
-
-  /**
-   * Join Room
-   */
+  socket.on("BE-send-observer-message", ({ roomId, msg, sender }) => {
+    console.log("Received observer message:", { roomId, msg, sender });
+    io.to(roomId).emit("FE-receive-observer-message", { msg, sender });
+  });
   socket.on("BE-join-room", ({ roomId, userName }) => {
-    // Socket Join RoomName
     console.log("BE-join-room", roomId, userName);
     socket.join(roomId);
-    socketList[socket.id] = { userName, video: true, audio: true };
+    socketList[socket.id] = { userName, video: true, audio: true, roomId };
 
-    // Set User List
     io.sockets.in(roomId).clients((err, clients) => {
       try {
-        const users = [];
-        clients.forEach((client) => {
-          // Add User List
-          users.push({ userId: client, info: socketList[client] });
-        });
+        const users = clients.map((client) => ({
+          userId: client,
+          info: socketList[client],
+        }));
         socket.broadcast.to(roomId).emit("FE-user-join", users);
-        // io.sockets.in(roomId).emit('FE-user-join', users);
+        updateViewers(roomId);
       } catch (e) {
         io.sockets.in(roomId).emit("FE-error-user-exist", { err: true });
       }
@@ -92,31 +109,22 @@ io.on("connection", (socket) => {
 
   socket.on("BE-send-message", ({ roomId, msg, sender, isBreakoutRoom }) => {
     console.log("Received message:", { roomId, msg, sender, isBreakoutRoom });
-    if (isBreakoutRoom) {
-      // Send only to sockets in the specific breakout room
-      io.to(roomId).emit("FE-receive-message", {
-        msg,
-        sender,
-        isBreakoutRoom,
-        roomId,
-      });
-    } else {
-      // Send to all sockets in the main room
-      io.to(roomId).emit("FE-receive-message", {
-        msg,
-        sender,
-        isBreakoutRoom,
-        roomId,
-      });
-    }
+    io.to(roomId).emit("FE-receive-message", {
+      msg,
+      sender,
+      isBreakoutRoom,
+      roomId,
+    });
   });
 
   socket.on("BE-leave-room", ({ roomId, leaver }) => {
+    console.log("User left room:", roomId, leaver);
     delete socketList[socket.id];
     socket.broadcast
       .to(roomId)
-      .emit("FE-user-leave", { userId: socket.id, userName: [socket.id] });
-    io.sockets.sockets[socket.id].leave(roomId);
+      .emit("FE-user-leave", { userId: socket.id, userName: leaver });
+    socket.leave(roomId);
+    updateViewers(roomId);
   });
 
   socket.on("BE-toggle-camera-audio", ({ roomId, switchTarget }) => {
@@ -144,6 +152,7 @@ io.on("connection", (socket) => {
       breakoutRooms[mainRoomId]
     );
   });
+
   socket.on(
     "BE-join-breakout-room",
     ({ mainRoomId, breakoutRoomName, userName }) => {
@@ -173,7 +182,8 @@ io.on("connection", (socket) => {
       }
       socket.to(breakoutRoomName).emit("FE-user-join", users);
       socket.emit("FE-join-breakout-room", breakoutRoomName);
-    });
+    }
+  );
 
   socket.on("BE-leave-breakout-room", ({ mainRoomId, userName }) => {
     const breakoutRoom = socketList[socket.id].breakoutRoom;
@@ -193,22 +203,34 @@ io.on("connection", (socket) => {
     socket.emit("FE-leave-breakout-room");
   });
 
-  socket.on("BE-call-user", ({ userToCall, from, signal }) => {
-    io.to(userToCall).emit("FE-receive-call", {
-      signal,
-      from,
-      info: socketList[socket.id],
-    });
+  socket.on("disconnect", () => {
+    console.log("User disconnected!");
+    const roomId = socketList[socket.id]?.roomId || viewers[socket.id]?.roomId;
+    if (roomId) {
+      socket.broadcast.to(roomId).emit("FE-user-leave", {
+        userId: socket.id,
+        userName: socketList[socket.id]?.userName || viewers[socket.id]?.userName,
+      });
+      delete socketList[socket.id];
+      delete viewers[socket.id];
+      updateViewers(roomId);
+    }
   });
-
-  socket.on("BE-accept-call", ({ signal, to }) => {
-    io.to(to).emit("FE-call-accepted", {
-      signal,
-      answerId: socket.id  // Use socket.id instead of undefined answerId
-    });
-  })
 });
 
+function updateViewers(roomId) {
+  const room = io.sockets.adapter.rooms[roomId];
+  if (room) {
+    const clients = Object.keys(room.sockets);
+    const streams = clients.map((clientId) => ({
+      id: clientId,
+      userName: socketList[clientId]?.userName || "Anonymous",
+      stream: null, // Actual stream data cannot be sent directly
+    }));
+    io.to(roomId).emit("FE-viewer-update-streams", streams);
+  }
+}
+
 http.listen(PORT, () => {
-  console.log("Connected : ", PORT);
+  console.log("Server Connected on Port:", PORT);
 });
