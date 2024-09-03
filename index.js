@@ -194,7 +194,7 @@ app.post("/api/addUser", (req, res) => {
     roomId: roomId,
     userName: userName,
     userToken: userToken,
-    iframeUrl: `http://localhost:5173/room/${roomId}?userToken=${userToken}&userName=${encodeURIComponent(
+    iframeUrl: `http://localhost:5173/room/${roomId}?userName=${encodeURIComponent(
       userName
     )}`,
     users: Array.from(rooms[roomId]).map((user) => ({
