@@ -1,0 +1,13 @@
+version: "2"
+services:
+  zoom:
+    image: zoom
+    build: ./
+    ports:
+      - 7088:7088
+    container_name: zoom
+
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - PORT=7088
