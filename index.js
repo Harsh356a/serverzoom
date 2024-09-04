@@ -11,7 +11,7 @@ let rooms = {};
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "../vite")));
-app.use(cors());
+app.use(cors("*"));
 if (process.env.NODE_ENV === "production") {
   app.use(express.static(path.join(__dirname, "../client/build")));
 
@@ -132,22 +132,7 @@ io.on("connection", (socket) => {
     }
   });
 });
-app.post("/api/createRoom", (req, res) => {
-  const { id } = req.body;
 
-  if (!id) {
-    return res.status(400).json({ error: "Room ID is required" });
-  }
-
-  if (rooms[id]) {
-    return res.status(409).json({ error: "Room already exists" });
-  }
-
-  rooms[id] = new Set();
-  console.log(`Room ${id} has been created`);
-
-  res.status(201).json({ roomId: id });
-});
 
 // function cleanupRoom(roomId) {
 //   if (rooms[roomId] && rooms[roomId].size === 0) {
