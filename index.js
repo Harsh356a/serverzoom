@@ -5,10 +5,9 @@ const io = require("socket.io")(http);
 const PORT = process.env.PORT || 3001;
 const path = require("path");
 const cors = require("cors");
-const { v4: uuidv4 } = require("uuid");
+const { v4: uuidv4 } = require('uuid');
 let socketList = {};
 let rooms = {};
-let externalUsers = {};
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "../vite")));
@@ -66,20 +65,20 @@ io.on("connection", (socket) => {
     const users = Array.from(rooms[roomId]).map((user) => ({
       userId:
         Object.keys(socketList).find(
-          (id) => socketList[id]?.userName === user
+          (id) => socketList[id].userName === user
         ) || null,
       info: {
         userName: user,
         video:
           socketList[
             Object.keys(socketList).find(
-              (id) => socketList[id]?.userName === user
+              (id) => socketList[id].userName === user
             )
           ]?.video || true,
         audio:
           socketList[
             Object.keys(socketList).find(
-              (id) => socketList[id]?.userName === user
+              (id) => socketList[id].userName === user
             )
           ]?.audio || true,
       },
@@ -134,6 +133,7 @@ io.on("connection", (socket) => {
   });
 });
 
+
 // function cleanupRoom(roomId) {
 //   if (rooms[roomId] && rooms[roomId].size === 0) {
 //     delete rooms[roomId];
@@ -163,22 +163,10 @@ app.post("/api/addUser", (req, res) => {
 
   rooms[roomId].add(userName);
 
-  // Store user info for external users
-  if (!externalUsers[roomId]) {
-    externalUsers[roomId] = {};
-  }
-  externalUsers[roomId][userName] = { video: true, audio: true };
-
-  // Generate a unique token for the user
-  const userToken = uuidv4();
-
-  // Add the user to socketList (this wasn't in your original code)
-  socketList[userToken] = { userName, video: true, audio: true };
-
   // Notify all clients in the room about the new user
   io.to(roomId).emit("FE-user-join", [
     {
-      userId: userToken,
+      userId: null,
       info: {
         userName: userName,
         video: true,
@@ -187,36 +175,9 @@ app.post("/api/addUser", (req, res) => {
     },
   ]);
 
-  // Prepare the response with all necessary information
-  const responseData = {
-    success: true,
-    message: "User added successfully",
-    roomId: roomId,
-    userName: userName,
-    userToken: userToken,
-    iframeUrl: `https://testing--inspiring-cendol-60afd6.netlify.app/room/${roomId}?.userName=${encodeURIComponent(
-      userName
-    )}`,
-    users: Array.from(rooms[roomId]).map((user) => ({
-      userName: user,
-      video: externalUsers[roomId][user]?.video || true,
-      audio: externalUsers[roomId][user]?.audio || true,
-    })),
-  };
-
-  // Save user session information (you might want to use a database for this in a production environment)
-  if (!global.userSessions) {
-    global.userSessions = {};
-  }
-  global.userSessions[userToken] = {
-    roomId: roomId,
-    userName: userName,
-  };
-
-  res.status(200).json(responseData);
+  res.status(200).json({ message: "User added successfully" });
 });
 
-// Update the removeUser API to handle external users
 app.post("/api/removeUser", (req, res) => {
   const { roomId, userName } = req.body;
 
@@ -230,21 +191,10 @@ app.post("/api/removeUser", (req, res) => {
 
   rooms[roomId].delete(userName);
 
-  // Remove user from externalUsers if present
-  if (externalUsers[roomId] && externalUsers[roomId][userName]) {
-    delete externalUsers[roomId][userName];
-  }
-
-  // Remove user from socketList
-  const userToken = Object.keys(socketList).find(
-    (token) => socketList[token]?.userName === userName
-  );
-  if (userToken) {
-    delete socketList[userToken];
-  }
-
   // Notify all clients in the room about the user leaving
   io.to(roomId).emit("FE-user-leave", { userName });
+
+  // cleanupRoom(roomId);
 
   res.status(200).json({ message: "User removed successfully" });
 });
