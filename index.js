@@ -194,7 +194,7 @@ app.post("/api/addUser", (req, res) => {
     roomId: roomId,
     userName: userName,
     userToken: userToken,
-    iframeUrl: `https://testing--inspiring-cendol-60afd6.netlify.app/${roomId}?userName=${encodeURIComponent(
+    iframeUrl: `"https://testing--inspiring-cendol-60afd6.netlify.app/room/${roomId}?userToken=${userToken}&userName=${encodeURIComponent(
       userName
     )}`,
     users: Array.from(rooms[roomId]).map((user) => ({
