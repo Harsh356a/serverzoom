@@ -66,20 +66,20 @@ io.on("connection", (socket) => {
     const users = Array.from(rooms[roomId]).map((user) => ({
       userId:
         Object.keys(socketList).find(
-          (id) => socketList[id].userName === user
+          (id) => socketList[id]?.userName === user
         ) || null,
       info: {
         userName: user,
         video:
           socketList[
             Object.keys(socketList).find(
-              (id) => socketList[id].userName === user
+              (id) => socketList[id]?.userName === user
             )
           ]?.video || true,
         audio:
           socketList[
             Object.keys(socketList).find(
-              (id) => socketList[id].userName === user
+              (id) => socketList[id]?.userName === user
             )
           ]?.audio || true,
       },
@@ -194,7 +194,7 @@ app.post("/api/addUser", (req, res) => {
     roomId: roomId,
     userName: userName,
     userToken: userToken,
-    iframeUrl: `https://testing--inspiring-cendol-60afd6.netlify.app/room/${roomId}?userName=${encodeURIComponent(
+    iframeUrl: `http://localhost:5173/room/${roomId}?.userName=${encodeURIComponent(
       userName
     )}`,
     users: Array.from(rooms[roomId]).map((user) => ({
@@ -237,7 +237,7 @@ app.post("/api/removeUser", (req, res) => {
 
   // Remove user from socketList
   const userToken = Object.keys(socketList).find(
-    (token) => socketList[token].userName === userName
+    (token) => socketList[token]?.userName === userName
   );
   if (userToken) {
     delete socketList[userToken];
