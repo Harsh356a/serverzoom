@@ -5,7 +5,7 @@ const io = require("socket.io")(http);
 const PORT = process.env.PORT || 3001;
 const path = require("path");
 const cors = require("cors");
-const { v4: uuidv4 } = require('uuid');
+const { v4: uuidv4 } = require("uuid");
 let socketList = {};
 let rooms = {};
 
@@ -55,7 +55,12 @@ io.on("connection", (socket) => {
   socket.on("BE-join-room", ({ roomId, userName }) => {
     console.log("BE-join-room", roomId, userName);
     socket.join(roomId);
-    socketList[socket.id] = { userName, video: true, audio: true };
+    socketList[socket.id] = {
+      userName,
+      video: role !== "Observer",
+      audio: role !== "Observer",
+      role,
+    };
 
     if (!rooms[roomId]) {
       rooms[roomId] = new Set();
@@ -117,7 +122,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("BE-toggle-camera-audio", ({ roomId, switchTarget }) => {
-    if (socketList[socket.id]) {
+    if (socketList[socket.id] && socketList[socket.id].role !== "Observer") {
       if (switchTarget === "video") {
         socketList[socket.id].video = !socketList[socket.id].video;
       } else {
@@ -133,7 +138,6 @@ io.on("connection", (socket) => {
   });
 });
 
-
 // function cleanupRoom(roomId) {
 //   if (rooms[roomId] && rooms[roomId].size === 0) {
 //     delete rooms[roomId];
@@ -147,7 +151,7 @@ app.post("/api/create-room", (req, res) => {
   res.status(201).json({ roomId });
 });
 app.post("/api/addUser", (req, res) => {
-  const { roomId, userName } = req.body;
+  const { roomId, userName, role } = req.body;
 
   if (!roomId || !userName) {
     return res.status(400).json({ error: "roomId and userName are required" });
@@ -164,17 +168,18 @@ app.post("/api/addUser", (req, res) => {
   rooms[roomId].add(userName);
 
   // Notify all clients in the room about the new user
-  io.to(roomId).emit("FE-user-join", [
-    {
-      userId: null,
-      info: {
-        userName: userName,
-        video: true,
-        audio: true,
+  if (role !== "Observers") {
+    io.to(roomId).emit("FE-user-join", [
+      {
+        userId: null,
+        info: {
+          userName: userName,
+          video: true,
+          audio: true,
+        },
       },
-    },
-  ]);
-
+    ]);
+  }
   res.status(200).json({ message: "User added successfully" });
 });
 
