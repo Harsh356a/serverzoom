@@ -6,33 +6,26 @@ const PORT = process.env.PORT || 3001;
 const path = require("path");
 const cors = require("cors");
 const { v4: uuidv4 } = require('uuid');
+
 let socketList = {};
 let rooms = {};
+let breakoutRooms = {};
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "../vite")));
 app.use(cors("*"));
+
 if (process.env.NODE_ENV === "production") {
   app.use(express.static(path.join(__dirname, "../client/build")));
-
   app.get("/*", function (req, res) {
     res.sendFile(path.join(__dirname, "../client/build/index.html"));
   });
 }
 
-// Route
 app.get("/ping", (req, res) => {
   res.status(200).send({ success: true });
 });
 
-// function cleanupRoom(roomId) {
-//   if (rooms[roomId] && rooms[roomId].size === 0) {
-//     delete rooms[roomId];
-//     console.log(`Room ${roomId} has been deleted due to inactivity`);
-//   }
-// }
-
-// Socket
 io.on("connection", (socket) => {
   console.log(`New User connected: ${socket.id}`);
 
@@ -43,48 +36,14 @@ io.on("connection", (socket) => {
 
   socket.on("BE-check-user", ({ roomId, userName }) => {
     let error = false;
-    console.log("BE-check-user", roomId, userName);
-
     if (rooms[roomId] && rooms[roomId].has(userName)) {
       error = true;
     }
-
     socket.emit("FE-error-user-exist", { error });
   });
 
   socket.on("BE-join-room", ({ roomId, userName }) => {
-    console.log("BE-join-room", roomId, userName);
-    socket.join(roomId);
-    socketList[socket.id] = { userName, video: true, audio: true };
-
-    if (!rooms[roomId]) {
-      rooms[roomId] = new Set();
-    }
-    rooms[roomId].add(userName);
-
-    const users = Array.from(rooms[roomId]).map((user) => ({
-      userId:
-        Object.keys(socketList).find(
-          (id) => socketList[id].userName === user
-        ) || null,
-      info: {
-        userName: user,
-        video:
-          socketList[
-            Object.keys(socketList).find(
-              (id) => socketList[id].userName === user
-            )
-          ]?.video || true,
-        audio:
-          socketList[
-            Object.keys(socketList).find(
-              (id) => socketList[id].userName === user
-            )
-          ]?.audio || true,
-      },
-    }));
-
-    socket.broadcast.to(roomId).emit("FE-user-join", users);
+    joinRoom(socket, roomId, userName);
   });
 
   socket.on("BE-call-user", ({ userToCall, from, signal }) => {
@@ -107,22 +66,12 @@ io.on("connection", (socket) => {
   });
 
   socket.on("BE-leave-room", ({ roomId, leaver }) => {
-    delete socketList[socket.id];
-    socket.broadcast.to(roomId).emit("FE-user-leave", { userName: leaver });
-    socket.leave(roomId);
-    if (rooms[roomId]) {
-      rooms[roomId].delete(leaver);
-      // cleanupRoom(roomId);
-    }
+    leaveRoom(socket, roomId, leaver);
   });
 
   socket.on("BE-toggle-camera-audio", ({ roomId, switchTarget }) => {
     if (socketList[socket.id]) {
-      if (switchTarget === "video") {
-        socketList[socket.id].video = !socketList[socket.id].video;
-      } else {
-        socketList[socket.id].audio = !socketList[socket.id].audio;
-      }
+      socketList[socket.id][switchTarget] = !socketList[socket.id][switchTarget];
       socket.broadcast
         .to(roomId)
         .emit("FE-toggle-camera", { userId: socket.id, switchTarget });
@@ -131,21 +80,67 @@ io.on("connection", (socket) => {
       socket.emit("FE-error", { message: "User not found in room" });
     }
   });
+
+  // New event for creating a breakout room
+  socket.on("BE-create-breakout-room", ({ mainRoomId }) => {
+    const breakoutRoomId = uuidv4();
+    breakoutRooms[breakoutRoomId] = { mainRoomId, users: new Set() };
+    socket.emit("FE-breakout-room-created", { breakoutRoomId });
+  });
+
+  // New event for joining a breakout room
+  socket.on("BE-join-breakout-room", ({ breakoutRoomId, userName }) => {
+    leaveRoom(socket, socket.rooms[1], userName); // Leave the current room
+    joinRoom(socket, breakoutRoomId, userName); // Join the breakout room
+  });
 });
 
+function joinRoom(socket, roomId, userName) {
+  socket.join(roomId);
+  socketList[socket.id] = { userName, video: true, audio: true };
 
-// function cleanupRoom(roomId) {
-//   if (rooms[roomId] && rooms[roomId].size === 0) {
-//     delete rooms[roomId];
-//     console.log(`Room ${roomId} has been deleted due to inactivity`);
-//   }
-// }
+  if (!rooms[roomId]) {
+    rooms[roomId] = new Set();
+  }
+  rooms[roomId].add(userName);
+
+  const users = Array.from(rooms[roomId]).map((user) => ({
+    userId: Object.keys(socketList).find(
+      (id) => socketList[id].userName === user
+    ) || null,
+    info: {
+      userName: user,
+      video: socketList[Object.keys(socketList).find(
+        (id) => socketList[id].userName === user
+      )]?.video || true,
+      audio: socketList[Object.keys(socketList).find(
+        (id) => socketList[id].userName === user
+      )]?.audio || true,
+    },
+  }));
+
+  socket.broadcast.to(roomId).emit("FE-user-join", users);
+}
+
+function leaveRoom(socket, roomId, leaver) {
+  delete socketList[socket.id];
+  socket.broadcast.to(roomId).emit("FE-user-leave", { userName: leaver });
+  socket.leave(roomId);
+  if (rooms[roomId]) {
+    rooms[roomId].delete(leaver);
+    if (rooms[roomId].size === 0) {
+      delete rooms[roomId];
+    }
+  }
+}
+
 app.post("/api/create-room", (req, res) => {
-  const roomId = uuidv4(); // Generate a unique room ID
+  const roomId = uuidv4();
   rooms[roomId] = new Set();
   console.log(`Room ${roomId} has been created via API`);
   res.status(201).json({ roomId });
 });
+
 app.post("/api/addUser", (req, res) => {
   const { roomId, userName } = req.body;
 
@@ -163,7 +158,6 @@ app.post("/api/addUser", (req, res) => {
 
   rooms[roomId].add(userName);
 
-  // Notify all clients in the room about the new user
   io.to(roomId).emit("FE-user-join", [
     {
       userId: null,
@@ -191,10 +185,7 @@ app.post("/api/removeUser", (req, res) => {
 
   rooms[roomId].delete(userName);
 
-  // Notify all clients in the room about the user leaving
   io.to(roomId).emit("FE-user-leave", { userName });
-
-  // cleanupRoom(roomId);
 
   res.status(200).json({ message: "User removed successfully" });
 });
@@ -202,4 +193,3 @@ app.post("/api/removeUser", (req, res) => {
 http.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
-
