@@ -5,9 +5,10 @@ const io = require("socket.io")(http);
 const PORT = process.env.PORT || 3001;
 const path = require("path");
 const cors = require("cors");
-const { v4: uuidv4 } = require('uuid');
+const { v4: uuidv4 } = require("uuid");
 let socketList = {};
 let rooms = {};
+let breakoutRooms = {};
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "../vite")));
@@ -51,7 +52,65 @@ io.on("connection", (socket) => {
 
     socket.emit("FE-error-user-exist", { error });
   });
+  socket.on("BE-create-breakout-room", ({ mainRoomId, breakoutRoomName }) => {
+    const breakoutRoomId = uuidv4();
+    console.log(mainRoomId, breakoutRoomName);
+    s;
+    if (!breakoutRooms[mainRoomId]) {
+      breakoutRooms[mainRoomId] = {};
+    }
+    breakoutRooms[mainRoomId][breakoutRoomId] = {
+      name: breakoutRoomName,
+      users: new Set(),
+    };
 
+    io.to(mainRoomId).emit("FE-breakout-room-created", {
+      breakoutRoomId,
+      breakoutRoomName,
+    });
+  });
+
+  socket.on(
+    "BE-join-breakout-room",
+    ({ mainRoomId, breakoutRoomId, userName }) => {
+      socket.join(breakoutRoomId);
+
+      if (
+        breakoutRooms[mainRoomId] &&
+        breakoutRooms[mainRoomId][breakoutRoomId]
+      ) {
+        breakoutRooms[mainRoomId][breakoutRoomId].users.add(userName);
+      }
+
+      const users = Array.from(breakoutRooms[mainRoomId][breakoutRoomId].users);
+      io.to(breakoutRoomId).emit("FE-user-join-breakout-room", {
+        users,
+        joinedUser: userName,
+      });
+    }
+  );
+
+  socket.on(
+    "BE-leave-breakout-room",
+    ({ mainRoomId, breakoutRoomId, userName }) => {
+      socket.leave(breakoutRoomId);
+
+      if (
+        breakoutRooms[mainRoomId] &&
+        breakoutRooms[mainRoomId][breakoutRoomId]
+      ) {
+        breakoutRooms[mainRoomId][breakoutRoomId].users.delete(userName);
+      }
+
+      io.to(breakoutRoomId).emit("FE-user-leave-breakout-room", { userName });
+
+      // If the breakout room is empty, remove it
+      if (breakoutRooms[mainRoomId][breakoutRoomId].users.size === 0) {
+        delete breakoutRooms[mainRoomId][breakoutRoomId];
+        io.to(mainRoomId).emit("FE-breakout-room-closed", { breakoutRoomId });
+      }
+    }
+  );
   socket.on("BE-join-room", ({ roomId, userName }) => {
     console.log("BE-join-room", roomId, userName);
     socket.join(roomId);
@@ -107,13 +166,14 @@ io.on("connection", (socket) => {
   });
 
   socket.on("BE-leave-room", ({ roomId, leaver }) => {
+    const userId = socket.id;
     delete socketList[socket.id];
-    socket.broadcast.to(roomId).emit("FE-user-leave", { userName: leaver });
+    socket.broadcast.to(roomId).emit("FE-user-leave", { userId, userName: leaver });
     socket.leave(roomId);
     if (rooms[roomId]) {
       rooms[roomId].delete(leaver);
-      // cleanupRoom(roomId);
     }
+    console.log(`User left: ${leaver} (${userId}) from room ${roomId}`);
   });
 
   socket.on("BE-toggle-camera-audio", ({ roomId, switchTarget }) => {
@@ -132,7 +192,6 @@ io.on("connection", (socket) => {
     }
   });
 });
-
 
 // function cleanupRoom(roomId) {
 //   if (rooms[roomId] && rooms[roomId].size === 0) {
