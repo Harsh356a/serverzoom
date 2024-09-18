@@ -111,10 +111,10 @@ io.on("connection", (socket) => {
       }
     }
   );
-  socket.on("BE-join-room", ({ roomId, userName }) => {
-    console.log("BE-join-room", roomId, userName);
+  socket.on("BE-join-room", ({ roomId, userName ,role}) => {
+    console.log("BE-join-room", roomId, userName,role);
     socket.join(roomId);
-    socketList[socket.id] = { userName, video: true, audio: true };
+    socketList[socket.id] = { userName, video: true, audio: true ,role };
 
     if (!rooms[roomId]) {
       rooms[roomId] = new Set();
@@ -126,6 +126,8 @@ io.on("connection", (socket) => {
         Object.keys(socketList).find(
           (id) => socketList[id].userName === user
         ) || null,
+        role: userInfo?.role || null, // Add the role here
+
       info: {
         userName: user,
         video:
