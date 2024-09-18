@@ -111,10 +111,10 @@ io.on("connection", (socket) => {
       }
     }
   );
-  socket.on("BE-join-room", ({ roomId, userName ,role}) => {
-    console.log("BE-join-room", roomId, userName,role);
+  socket.on("BE-join-room", ({ roomId, userName, role }) => {
+    console.log("BE-join-room", roomId, userName, role);
     socket.join(roomId);
-    socketList[socket.id] = { userName, video: true, audio: true ,role };
+    socketList[socket.id] = { userName, video: true, audio: true, role };
 
     if (!rooms[roomId]) {
       rooms[roomId] = new Set();
@@ -126,10 +126,11 @@ io.on("connection", (socket) => {
         Object.keys(socketList).find(
           (id) => socketList[id].userName === user
         ) || null,
-        role: userInfo?.role || null, // Add the role here
 
       info: {
         userName: user,
+        role: role ,// Add the role here
+
         video:
           socketList[
             Object.keys(socketList).find(
@@ -170,7 +171,9 @@ io.on("connection", (socket) => {
   socket.on("BE-leave-room", ({ roomId, leaver }) => {
     const userId = socket.id;
     delete socketList[socket.id];
-    socket.broadcast.to(roomId).emit("FE-user-leave", { userId, userName: leaver });
+    socket.broadcast
+      .to(roomId)
+      .emit("FE-user-leave", { userId, userName: leaver });
     socket.leave(roomId);
     if (rooms[roomId]) {
       rooms[roomId].delete(leaver);
