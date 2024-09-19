@@ -36,17 +36,16 @@ io.on('connection', (socket) => {
     console.log('User disconnected!');
   });
 
-  socket.on('BE-check-user', ({ roomId, userName }) => {
+ socket.on("BE-check-user", ({ roomId, userName }) => {
     let error = false;
-    console.log('BE-check-user', roomId, userName);
-    io.sockets.in(roomId).clients((err, clients) => {
-      clients.forEach((client) => {
-        if (socketList[client] == userName) {
-          error = true;
-        }
-      });
-      socket.emit('FE-error-user-exist', { error });
-    });
+    console.log("BE-check-user", roomId, userName);
+
+    if (rooms[roomId] && rooms[roomId].has(userName)) {
+      error = true;
+    }
+
+    socket.emit("FE-error-user-exist", { error });
+  });
   });
 
   /**
